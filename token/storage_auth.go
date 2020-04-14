@@ -60,6 +60,8 @@ func decodeAuthorization(b []byte) (*influxdb.Authorization, error) {
 	return a, nil
 }
 
+// CreateAuthorization takes an Authorization object and saves it in storage using its token
+// using its token property as an index
 func (s *Store) CreateAuthorization(ctx context.Context, tx kv.Tx, a *influxdb.Authorization) error {
 	if !a.ID.Valid() {
 		id, err := s.generateSafeID(ctx, tx, authBucket)
@@ -69,10 +71,52 @@ func (s *Store) CreateAuthorization(ctx context.Context, tx kv.Tx, a *influxdb.A
 		a.ID = id
 	}
 
+	v, err := encodeAuthorization(a)
+	if err != nil {
+		return &influxdb.Error{
+			Code: influxdb.EInvalid,
+			Err:  err,
+		}
+	}
+
 	encodedID, err := a.ID.Encode()
 	if err != nil {
-		return ErrInvalidAuthID
+		return ErrInvalidAuthIDError(err)
 	}
+
+	idx, err := authIndexBucket(tx)
+	if err != nil {
+		return err
+	}
+
+	// check that token is unique
+	_, err = idx.Get([]byte(a.Token))
+	if err == nil {
+		return ErrTokenAlreadyExistsError
+	} else if !kv.IsNotFound(err) {
+		return ErrInternalServiceError(err)
+	}
+
+	b, err := tx.Bucket(authBucket)
+	if err != nil {
+		return err
+	}
+
+	if err := idx.Put(authIndexKey(a.Token), encodedID); err != nil {
+		return &influxdb.Error{
+			Code: influxdb.EInternal,
+			Err:  err,
+		}
+	}
+
+	if err := b.Put(encodedID, v); err != nil {
+		return &influxdb.Error{
+			Err: err,
+		}
+	}
+
+	return nil
+
 }
 
 // GetAuthorization gets an authorization by its ID from the auth bucket in kv
@@ -97,4 +141,83 @@ func (s *Store) GetAuthorization(ctx context.Context, tx kv.Tx, id influxdb.ID) 
 	}
 
 	return decodeAuthorization(v)
+}
+
+// ListAuthorizations returns all the authorizations matching a set of FindOptions. This function is used for
+// FindAuthorizationByID, FindAuthorizationByToken, and FindAuthorizations in the AuthorizationService implementation
+func (s *Store) ListAuthorizations(ctx context.Context, tx kv.Tx, opt ...influxdb.FindOptions) ([]*influxdb.Authorization, error) {
+	if len(opt) == 0 {
+		opt = append(opt, influxdb.FindOptions{
+			Limit: influxdb.DefaultPageSize,
+		})
+	}
+	o := opt[0]
+	if o.Limit > influxdb.MaxPageSize || o.Limit == 0 {
+		o.Limit = influxdb.MaxPageSize
+	}
+
+	b, err := tx.Bucket(authBucket)
+	if err != nil {
+		return nil, err
+	}
+
+	cursor, err := b.ForwardCursor(nil)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close()
+
+	count := 0
+	auths := []*influxdb.Authorization{}
+	for k, v := cursor.Next(); k != nil; k, v = cursor.Next() {
+		if o.Offset != 0 && count < o.Offset {
+			count++
+			continue
+		}
+		a, err := decodeAuthorization(v)
+		if err != nil {
+			continue
+		}
+
+		auths = append(auths, a)
+
+		if len(auths) >= o.Limit {
+			break
+		}
+	}
+
+	return auths, cursor.Err()
+}
+
+// DeleteAuthorization removes an authorization from storage
+func (s *Store) DeleteAuthorization(ctx context.Context, tx kv.Tx, id influxdb.ID) error {
+	a, err := s.GetAuthorization(ctx, tx, id)
+	if err != nil {
+		return nil
+	}
+
+	encodedID, err := id.Encode()
+	if err != nil {
+		return ErrInvalidAuthID
+	}
+
+	idx, err := authIndexBucket(tx)
+	if err != nil {
+		return err
+	}
+
+	b, err := tx.Bucket(authBucket)
+	if err != nil {
+		return err
+	}
+
+	if err := idx.Delete([]byte(a.Token)); err != nil {
+		return ErrInternalServiceError(err)
+	}
+
+	if err := b.Delete(encodedID); err != nil {
+		return ErrInternalServiceError(err)
+	}
+
+	return nil
 }

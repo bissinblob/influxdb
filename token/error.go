@@ -31,7 +31,23 @@ var (
 		Code: influxdb.EInternal,
 		Msg:  "unable to generate valid id",
 	}
+
+	// ErrTokenAlreadyExistsError is used when attempting to create an authorization
+	// with a token that already exists
+	ErrTokenAlreadyExistsError = &influxdb.Error{
+		Code: influxdb.EConflict,
+		Msg:  fmt.Sprintf("token already exists"),
+	}
 )
+
+// ErrInvalidAuthIDError is used when a service was provided an invalid ID.
+func ErrInvalidAuthIDError(err error) *influxdb.Error {
+	return &influxdb.Error{
+		Code: influxdb.EInvalid,
+		Msg:  "auth id provided is invalid",
+		Err:  err,
+	}
+}
 
 // ErrInternalServiceError is used when the error comes from an internal system.
 func ErrInternalServiceError(err error) *influxdb.Error {
