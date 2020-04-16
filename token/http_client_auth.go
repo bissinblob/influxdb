@@ -11,6 +11,8 @@ import (
 
 const prefixAuthorization = "/api/v2/authorizations"
 
+var _ influxdb.AuthorizationService = (*AuthorizationService)(nil)
+
 // AuthorizationService connects to Influx via HTTP using tokens to manage authorizations
 type AuthorizationService struct {
 	Client *httpc.Client

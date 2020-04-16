@@ -186,3 +186,123 @@ func decodePostAuthorizationRequest(ctx context.Context, r *http.Request) (*post
 
 	return a, a.Validate()
 }
+
+func getAuthorizedUser(r *http.Request, svc platform.UserService) (*platform.User, error) {
+	ctx := r.Context()
+
+	a, err := platcontext.GetAuthorizer(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return svc.FindUserByID(ctx, a.GetUserID())
+}
+
+// handleGetAuthorizations is the HTTP handler for the GET /api/v2/authorizations route.
+func (h *AuthorizationHandler) handleGetAuthorizations(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	req, err := decodeGetAuthorizationsRequest(ctx, r)
+	if err != nil {
+		h.log.Info("Failed to decode request", zap.String("handler", "getAuthorizations"), zap.Error(err))
+		h.HandleHTTPError(ctx, err, w)
+		return
+	}
+
+	opts := platform.FindOptions{}
+	as, _, err := h.AuthorizationService.FindAuthorizations(ctx, req.filter, opts)
+	if err != nil {
+		h.HandleHTTPError(ctx, err, w)
+		return
+	}
+
+	auths := make([]*authResponse, 0, len(as))
+	for _, a := range as {
+		o, err := h.OrganizationService.FindOrganizationByID(ctx, a.OrgID)
+		if err != nil {
+			h.log.Info("Failed to get organization", zap.String("handler", "getAuthorizations"), zap.String("orgID", a.OrgID.String()), zap.Error(err))
+			continue
+		}
+
+		u, err := h.UserService.FindUserByID(ctx, a.UserID)
+		if err != nil {
+			h.log.Info("Failed to get user", zap.String("handler", "getAuthorizations"), zap.String("userID", a.UserID.String()), zap.Error(err))
+			continue
+		}
+
+		ps, err := newPermissionsResponse(ctx, a.Permissions, h.LookupService)
+		if err != nil {
+			h.HandleHTTPError(ctx, err, w)
+			return
+		}
+
+		auths = append(auths, newAuthResponse(a, o, u, ps))
+	}
+
+	h.log.Debug("Auths retrieved ", zap.String("auths", fmt.Sprint(auths)))
+
+	if err := encodeResponse(ctx, w, http.StatusOK, newAuthsResponse(auths)); err != nil {
+		h.HandleHTTPError(ctx, err, w)
+		return
+	}
+}
+
+type getAuthorizationsRequest struct {
+	filter platform.AuthorizationFilter
+}
+
+func decodeGetAuthorizationsRequest(ctx context.Context, r *http.Request) (*getAuthorizationsRequest, error) {
+	qp := r.URL.Query()
+
+	req := &getAuthorizationsRequest{}
+
+	userID := qp.Get("userID")
+	if userID != "" {
+		id, err := platform.IDFromString(userID)
+		if err != nil {
+			return nil, err
+		}
+		req.filter.UserID = id
+	}
+
+	user := qp.Get("user")
+	if user != "" {
+		req.filter.User = &user
+	}
+
+	orgID := qp.Get("orgID")
+	if orgID != "" {
+		id, err := platform.IDFromString(orgID)
+		if err != nil {
+			return nil, err
+		}
+		req.filter.OrgID = id
+	}
+
+	org := qp.Get("org")
+	if org != "" {
+		req.filter.Org = &org
+	}
+
+	authID := qp.Get("id")
+	if authID != "" {
+		id, err := platform.IDFromString(authID)
+		if err != nil {
+			return nil, err
+		}
+		req.filter.ID = id
+	}
+
+	return req, nil
+}
+
+func (h *AuthorizationHandler) handleGetAuthorization(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	req, err := decodeGetAuthorizationRequest(ctx, r)
+	if err != nil {
+		h.log.Info("Failed to decode request", zap.String("handler", "getAuthorization"), zap.Error(err))
+		h.HandleHTTPError(ctx, err, w)
+		return
+	}
+
+	
+}

@@ -312,7 +312,7 @@ func newBucketsResponse(ctx context.Context, opts influxdb.FindOptions, f influx
 		rs = append(rs, NewBucketResponse(b, labels))
 	}
 	return &bucketsResponse{
-		Links:   NewPagingLinks(prefixBuckets, opts, f, len(bs)),
+		Links:   NewPagingLinks(prefixBuckets, opts, f, len(bs)), // TODO (al): connect paging links types
 		Buckets: rs,
 	}
 }
