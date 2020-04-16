@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
 	"github.com/influxdata/influxdb/v2"
+	ihttp "github.com/influxdata/influxdb/v2/htto"
 	kithttp "github.com/influxdata/influxdb/v2/kit/transport/http"
 	"go.uber.org/zap"
 )
@@ -241,7 +242,7 @@ func newBucketsResponse(ctx context.Context, opts influxdb.FindOptions, f influx
 		rs = append(rs, NewBucketResponse(b))
 	}
 	return &bucketsResponse{
-		Links:   influxdb.NewPagingLinks(prefixBuckets, opts, f, len(bs)),
+		Links:   NewPagingLinks(prefixBuckets, opts, f, len(bs)),
 		Buckets: rs,
 	}
 }
@@ -394,7 +395,7 @@ func decodeGetBucketsRequest(r *http.Request) (*getBucketsRequest, error) {
 	qp := r.URL.Query()
 	req := &getBucketsRequest{}
 
-	opts, err := decodeFindOptions(r)
+	opts, err := ihttp.DecodeFindOptions(r)
 	if err != nil {
 		return nil, err
 	}

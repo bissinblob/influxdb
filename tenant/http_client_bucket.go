@@ -6,6 +6,7 @@ import (
 	"path"
 
 	"github.com/influxdata/influxdb/v2"
+	ihttp "github.com/influxdata/influxdb/v2/http"
 	"github.com/influxdata/influxdb/v2/kit/tracing"
 	"github.com/influxdata/influxdb/v2/pkg/httpc"
 )
@@ -99,7 +100,7 @@ func (s *BucketClientService) FindBuckets(ctx context.Context, filter influxdb.B
 	span, _ := tracing.StartSpanFromContext(ctx)
 	defer span.Finish()
 
-	params := findOptionParams(opt...)
+	params := ihttp.FindOptionParams(opt...)
 	if filter.OrganizationID != nil {
 		params = append(params, [2]string{"orgID", filter.OrganizationID.String()})
 	}

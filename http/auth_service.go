@@ -657,7 +657,7 @@ func (s *AuthorizationService) FindAuthorizationByToken(ctx context.Context, tok
 // FindAuthorizations returns a list of authorizations that match filter and the total count of matching authorizations.
 // Additional options provide pagination & sorting.
 func (s *AuthorizationService) FindAuthorizations(ctx context.Context, filter platform.AuthorizationFilter, opt ...platform.FindOptions) ([]*platform.Authorization, int, error) {
-	params := findOptionParams(opt...)
+	params := FindOptionParams(opt...)
 	if filter.ID != nil {
 		params = append(params, [2]string{"id", filter.ID.String()})
 	}

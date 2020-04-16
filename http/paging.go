@@ -6,19 +6,45 @@ import (
 	"net/url"
 	"strconv"
 
-	platform "github.com/influxdata/influxdb/v2"
+	"github.com/influxdata/influxdb/v2"
 )
 
-// decodeFindOptions returns a FindOptions decoded from http request.
-func decodeFindOptions(r *http.Request) (*platform.FindOptions, error) {
-	opts := &platform.FindOptions{}
+const (
+	DefaultPageSize = 20
+	MaxPageSize     = 100
+)
+
+// PagingFilter represents a filter containing url query params.
+type PagingFilter interface {
+	// QueryParams returns a map containing url query params.
+	QueryParams() map[string][]string
+}
+
+// PagingLinks represents paging links.
+type PagingLinks struct {
+	Prev string `json:"prev,omitempty"`
+	Self string `json:"self"`
+	Next string `json:"next,omitempty"`
+}
+
+// FindOptions represents options passed to all find methods with multiple results.
+type FindOptions struct {
+	Limit      int
+	Offset     int
+	SortBy     string
+	Descending bool
+}
+
+// DecodeFindOptions returns a FindOptions decoded from http request.
+func DecodeFindOptions(r *http.Request) (*influxdb.FindOptions, error) {
+	opts := &influxdb.FindOptions{}
 	qp := r.URL.Query()
 
 	if offset := qp.Get("offset"); offset != "" {
 		o, err := strconv.Atoi(offset)
 		if err != nil {
-			return nil, &platform.Error{
-				Code: platform.EInvalid,
+			return nil, &influxdb.Error{
+				Code: influxdb.EInvalid,
 				Msg:  "offset is invalid",
 			}
 		}
@@ -29,22 +55,22 @@ func decodeFindOptions(r *http.Request) (*platform.FindOptions, error) {
 	if limit := qp.Get("limit"); limit != "" {
 		l, err := strconv.Atoi(limit)
 		if err != nil {
-			return nil, &platform.Error{
-				Code: platform.EInvalid,
+			return nil, &influxdb.Error{
+				Code: influxdb.EInvalid,
 				Msg:  "limit is invalid",
 			}
 		}
 
-		if l < 1 || l > platform.MaxPageSize {
-			return nil, &platform.Error{
-				Code: platform.EInvalid,
-				Msg:  fmt.Sprintf("limit must be between 1 and %d", platform.MaxPageSize),
+		if l < 1 || l > influxdb.MaxPageSize {
+			return nil, &influxdb.Error{
+				Code: influxdb.EInvalid,
+				Msg:  fmt.Sprintf("limit must be between 1 and %d", influxdb.MaxPageSize),
 			}
 		}
 
 		opts.Limit = l
 	} else {
-		opts.Limit = platform.DefaultPageSize
+		opts.Limit = influxdb.DefaultPageSize
 	}
 
 	if sortBy := qp.Get("sortBy"); sortBy != "" {
@@ -54,8 +80,8 @@ func decodeFindOptions(r *http.Request) (*platform.FindOptions, error) {
 	if descending := qp.Get("descending"); descending != "" {
 		desc, err := strconv.ParseBool(descending)
 		if err != nil {
-			return nil, &platform.Error{
-				Code: platform.EInvalid,
+			return nil, &influxdb.Error{
+				Code: influxdb.EInvalid,
 				Msg:  "descending is invalid",
 			}
 		}
@@ -66,7 +92,8 @@ func decodeFindOptions(r *http.Request) (*platform.FindOptions, error) {
 	return opts, nil
 }
 
-func findOptionParams(opts ...platform.FindOptions) [][2]string {
+// TODO (al) these should be the same (?)
+func FindOptionParams(opts ...influxdb.FindOptions) [][2]string {
 	var out [][2]string
 	for _, o := range opts {
 		for k, vals := range o.QueryParams() {
@@ -78,9 +105,27 @@ func findOptionParams(opts ...platform.FindOptions) [][2]string {
 	return out
 }
 
-// newPagingLinks returns a PagingLinks.
+// QueryParams returns a map containing url query params.
+func (f FindOptions) QueryParams() map[string][]string {
+	qp := map[string][]string{
+		"descending": {strconv.FormatBool(f.Descending)},
+		"offset":     {strconv.Itoa(f.Offset)},
+	}
+
+	if f.Limit > 0 {
+		qp["limit"] = []string{strconv.Itoa(f.Limit)}
+	}
+
+	if f.SortBy != "" {
+		qp["sortBy"] = []string{f.SortBy}
+	}
+
+	return qp
+}
+
+// NewPagingLinks returns a PagingLinks.
 // num is the number of returned results.
-func newPagingLinks(basePath string, opts platform.FindOptions, f platform.PagingFilter, num int) *platform.PagingLinks {
+func NewPagingLinks(basePath string, opts FindOptions, f PagingFilter, num int) *PagingLinks {
 	u := url.URL{
 		Path: basePath,
 	}
@@ -123,7 +168,7 @@ func newPagingLinks(basePath string, opts platform.FindOptions, f platform.Pagin
 		prev = u.String()
 	}
 
-	links := &platform.PagingLinks{
+	links := &PagingLinks{
 		Prev: prev,
 		Self: self,
 		Next: next,
